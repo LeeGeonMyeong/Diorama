@@ -1,0 +1,118 @@
+<!DOCTYPE html>
+<html lang="ko">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<title>Between Pages 4.3 — Dimensional Mist Final</title>
+<style>
+*{box-sizing:border-box}body{margin:0;overflow:hidden;background:#090a18;color:#f7e6ce;font-family:Georgia,'Malgun Gothic',serif}canvas{display:block}
+#header{position:absolute;top:22px;left:26px;pointer-events:none;text-shadow:0 2px 15px #000}#header h1{margin:0;font-size:clamp(25px,3vw,43px)}#header p{font-size:13px;color:#d3bde9;margin:8px 0}
+#buttons{position:absolute;right:20px;top:22px;display:flex;gap:8px;flex-wrap:wrap;justify-content:flex-end;max-width:68%}button{background:#211932dd;border:1px solid #85709c;color:#f8e6c9;border-radius:9px;padding:10px 13px;cursor:pointer}button:hover,button.active{background:#49345f;border-color:#e4b96e}
+#hint{position:absolute;bottom:18px;left:50%;transform:translateX(-50%);background:#120f22c9;padding:9px 16px;border-radius:18px;font:12px Arial,sans-serif;white-space:nowrap;text-align:center}#toast{position:absolute;bottom:67px;left:50%;transform:translateX(-50%);background:#211631e8;border:1px solid #9779bd;border-radius:10px;padding:11px 18px;opacity:0;transition:opacity .3s;pointer-events:none}
+@media(max-width:780px){#header{left:12px;top:12px}#buttons{top:auto;bottom:55px;right:8px;max-width:98%}#hint{bottom:8px;font-size:10px}}
+</style>
+<script type="importmap">{"imports":{"three":"https://cdn.jsdelivr.net/npm/three@0.160.1/build/three.module.js","three/addons/":"https://cdn.jsdelivr.net/npm/three@0.160.1/examples/jsm/"}}</script>
+</head>
+<body>
+<div id="header"><h1>Between Pages</h1><p>차원 사이의 마법 도서관 · Dimensional Mist</p></div>
+<div id="buttons"><button id="night">🌙 야간 모드</button><button id="power">✨ 마법 강화</button><button id="tour">🎥 자동 투어</button><button id="reset">↺ 초기화</button></div>
+<div id="hint">드래그: 회전 · 휠: 확대/축소 · 차원문/마법책 클릭: 상호작용</div><div id="toast"></div>
+<script type="module">
+import * as THREE from 'three';
+import {OrbitControls} from 'three/addons/controls/OrbitControls.js';
+
+const scene=new THREE.Scene();
+
+// Dimensional mist backdrop: no planets, no spiral galaxies.
+function createDimensionalMist(){
+  const canvas=document.createElement('canvas');canvas.width=2048;canvas.height=1024;
+  const ctx=canvas.getContext('2d'),W=canvas.width,H=canvas.height;
+  let seed=45678;const rnd=()=>{seed=(seed*1664525+1013904223)>>>0;return seed/4294967296;};
+  const bg=ctx.createLinearGradient(0,0,0,H);
+  bg.addColorStop(0,'#070817');bg.addColorStop(.36,'#14102b');bg.addColorStop(.68,'#211537');bg.addColorStop(1,'#090916');
+  ctx.fillStyle=bg;ctx.fillRect(0,0,W,H);
+  // Fine-grain dithering breaks up visible gradient banding.
+  const noise=ctx.createImageData(W,H);
+  for(let k=0;k<noise.data.length;k+=4){const n=(rnd()-.5)*9;noise.data[k]=128+n;noise.data[k+1]=112+n;noise.data[k+2]=164+n;noise.data[k+3]=7;}
+  const nc=document.createElement('canvas');nc.width=W;nc.height=H;nc.getContext('2d').putImageData(noise,0,0);ctx.drawImage(nc,0,0);
+  function mist(x,y,rx,ry,color){ctx.save();ctx.translate(x,y);ctx.scale(rx,ry);const g=ctx.createRadialGradient(0,0,0,0,0,1);g.addColorStop(0,color);g.addColorStop(.48,color);g.addColorStop(1,'rgba(0,0,0,0)');ctx.fillStyle=g;ctx.beginPath();ctx.arc(0,0,1,0,Math.PI*2);ctx.fill();ctx.restore();}
+  const colors=['rgba(89,59,152,.055)','rgba(109,72,172,.045)','rgba(66,82,148,.045)','rgba(155,91,161,.035)'];
+  for(let i=0;i<85;i++){const x=rnd()*W,y=H*.48+Math.sin(x/280)*75+(rnd()-.5)*240;mist(x,y,130+rnd()*250,55+rnd()*105,colors[Math.floor(rnd()*colors.length)]);}
+  for(let i=0;i<65;i++){mist(rnd()*W,H*.72+rnd()*H*.25,160+rnd()*260,35+rnd()*80,'rgba(111,78,153,.035)');}
+  for(let i=0;i<900;i++){ctx.beginPath();ctx.arc(rnd()*W,rnd()*H,.25+rnd()*.65,0,Math.PI*2);ctx.fillStyle=`rgba(205,197,239,${.12+rnd()*.35})`;ctx.fill();}
+  for(let i=0;i<25;i++){const x=rnd()*W,y=rnd()*H;mist(x,y,18+rnd()*25,18+rnd()*25,'rgba(157,124,234,.06)');ctx.beginPath();ctx.arc(x,y,1+rnd()*1.3,0,Math.PI*2);ctx.fillStyle='rgba(220,204,255,.6)';ctx.fill();}
+  const tex=new THREE.CanvasTexture(canvas);tex.colorSpace=THREE.SRGBColorSpace;tex.mapping=THREE.EquirectangularReflectionMapping;tex.magFilter=THREE.LinearFilter;tex.minFilter=THREE.LinearFilter;return tex;
+}
+const mistBackground=createDimensionalMist();scene.background=mistBackground;
+scene.fog=new THREE.FogExp2('#171126',.006);
+
+const camera=new THREE.PerspectiveCamera(40,innerWidth/innerHeight,.1,200);camera.position.set(13.5,11.8,16.5);
+const renderer=new THREE.WebGLRenderer({antialias:true,powerPreference:'high-performance'});
+renderer.setSize(innerWidth,innerHeight);renderer.setPixelRatio(Math.min(devicePixelRatio,2));renderer.shadowMap.enabled=true;renderer.shadowMap.type=THREE.PCFSoftShadowMap;renderer.toneMapping=THREE.ACESFilmicToneMapping;renderer.toneMappingExposure=1.65;renderer.outputColorSpace=THREE.SRGBColorSpace;document.body.appendChild(renderer.domElement);
+const controls=new OrbitControls(camera,renderer.domElement);controls.target.set(0,4.2,0);controls.enableDamping=true;controls.minDistance=9;controls.maxDistance=48;controls.maxPolarAngle=Math.PI*.86;controls.update();
+const world=new THREE.Group();scene.add(world);
+// Layered translucent fog drifting below the island.
+const fogCanvas=document.createElement('canvas');fogCanvas.width=fogCanvas.height=256;
+const fc=fogCanvas.getContext('2d');const fg=fc.createRadialGradient(128,128,5,128,128,126);
+fg.addColorStop(0,'rgba(180,151,224,0.52)');fg.addColorStop(.35,'rgba(132,103,189,0.28)');fg.addColorStop(.72,'rgba(90,68,145,0.09)');fg.addColorStop(1,'rgba(88,63,140,0)');
+fc.fillStyle=fg;fc.fillRect(0,0,256,256);
+const fogTexture=new THREE.CanvasTexture(fogCanvas);fogTexture.colorSpace=THREE.SRGBColorSpace;
+const mistWisps=[];
+for(let i=0;i<26;i++){
+ const a=i*Math.PI*2/26,rad=7.6+(i%5)*1.05;
+ const sprite=new THREE.Sprite(new THREE.SpriteMaterial({map:fogTexture,transparent:true,opacity:.62,depthWrite:false,depthTest:true}));
+ sprite.position.set(Math.cos(a)*rad,-1.65+(i%5)*.29,Math.sin(a)*rad*.8);
+ sprite.scale.set(10+(i%4)*2.3,4.2+(i%3)*1.1,1);
+ scene.add(sprite);mistWisps.push({sprite,baseX:sprite.position.x,baseY:sprite.position.y,phase:i*.9});
+}
+
+let seed=4321;function random(){seed=(seed*1664525+1013904223)>>>0;return seed/4294967296;}const range=(a,b)=>a+(b-a)*random();
+function makeTexture(type){const c=document.createElement('canvas');c.width=c.height=256;const x=c.getContext('2d');x.fillStyle=type==='stone'?'#655b76':'#70465b';x.fillRect(0,0,256,256);if(type==='stone'){for(let i=0;i<1800;i++){const v=Math.floor(range(50,160));x.fillStyle=`rgba(${v},${v},${v+12},.09)`;x.fillRect(range(0,256),range(0,256),range(1,12),range(1,7));}}else{for(let i=0;i<90;i++){x.strokeStyle=random()>.5?'rgba(35,16,31,.22)':'rgba(244,171,113,.1)';x.lineWidth=range(.5,3);x.beginPath();const a=range(0,256);x.moveTo(a,0);x.bezierCurveTo(a+range(-8,8),90,a+range(-8,8),180,a+range(-5,5),256);x.stroke();}}const t=new THREE.CanvasTexture(c);t.colorSpace=THREE.SRGBColorSpace;return t;}
+const stoneTexture=makeTexture('stone'),woodTexture=makeTexture('wood');
+const mat=(color,extra={})=>new THREE.MeshStandardMaterial({color,roughness:.75,...extra});
+const stone=mat('#b5a7c1',{map:stoneTexture}),darkStone=mat('#383047'),deepStone=mat('#51455e'),wood=mat('#a67a80',{map:woodTexture}),darkWood=mat('#493148'),gold=mat('#d8ae6b',{metalness:.7,roughness:.27}),parchment=mat('#f5e6c2'),purple=mat('#7448ba',{emissive:'#53219a',emissiveIntensity:.8}),cyan=mat('#83efff',{emissive:'#40c9ff',emissiveIntensity:2}),glowGold=mat('#ffdf9d',{emissive:'#ffad47',emissiveIntensity:2});
+const bookColors=['#854268','#426e82','#8854ae','#ad7a4c','#43796d','#ad4e67','#53468b','#a38a56'].map(c=>mat(c));
+function add(geometry,material,parent=world){const o=new THREE.Mesh(geometry,material);o.castShadow=true;o.receiveShadow=true;parent.add(o);return o;}
+function box(w,h,d,x,y,z,m,p=world){const o=add(new THREE.BoxGeometry(w,h,d),m,p);o.position.set(x,y,z);return o;}
+function sphere(r,x,y,z,m,p=world){const o=add(new THREE.SphereGeometry(r,20,14),m,p);o.position.set(x,y,z);return o;}
+function cylinder(r1,r2,h,x,y,z,m,p=world,n=12){const o=add(new THREE.CylinderGeometry(r1,r2,h,n),m,p);o.position.set(x,y,z);return o;}
+function connect(a,b,r,m,p=world){const A=new THREE.Vector3(...a),B=new THREE.Vector3(...b),d=B.clone().sub(A);const o=add(new THREE.CylinderGeometry(r,r,d.length(),8),m,p);o.position.copy(A).add(B).multiplyScalar(.5);o.quaternion.setFromUnitVectors(new THREE.Vector3(0,1,0),d.normalize());return o;}
+function pointLight(color,intensity,distance,x,y,z){const o=new THREE.PointLight(color,intensity,distance,2);o.position.set(x,y,z);scene.add(o);return o;}
+scene.add(new THREE.HemisphereLight('#c1a8ff','#251428',1.65));const sun=new THREE.DirectionalLight('#ffdab1',3.1);sun.position.set(9,17,13);sun.castShadow=true;sun.shadow.mapSize.set(2048,2048);sun.shadow.camera.left=-18;sun.shadow.camera.right=18;sun.shadow.camera.top=18;sun.shadow.camera.bottom=-18;scene.add(sun);pointLight('#ffb366',28,16,-5,8,3);pointLight('#81dfff',14,11,5,5,4);
+function islandLayer(radius,top,bottom,segments,material){const vertices=[],indices=[],upper=[],lower=[];for(let i=0;i<segments;i++){const a=i/segments*Math.PI*2,irregular=1+.07*Math.sin(a*5)+.045*Math.cos(a*9),r=radius*irregular;upper.push([Math.cos(a)*r,top+.12*Math.sin(a*6),Math.sin(a)*r*.79]);lower.push([Math.cos(a)*r*.69,bottom+.15*Math.cos(a*7),Math.sin(a)*r*.55]);}vertices.push(0,top,0);for(const p of upper)vertices.push(...p);for(const p of lower)vertices.push(...p);vertices.push(0,bottom,0);const us=1,ls=1+segments,bc=1+segments*2;for(let i=0;i<segments;i++){const j=(i+1)%segments;indices.push(0,us+j,us+i);indices.push(us+i,us+j,ls+i,us+j,ls+j,ls+i);indices.push(bc,ls+i,ls+j);}const g=new THREE.BufferGeometry();g.setAttribute('position',new THREE.Float32BufferAttribute(vertices,3));g.setIndex(indices);g.computeVertexNormals();return add(g,material);}
+islandLayer(10.1,.35,-2.3,48,darkStone);islandLayer(9.85,.55,-.25,48,stone);const floor=cylinder(8.1,8.1,.18,0,.65,0,deepStone,world,48);floor.scale.z=.8;
+for(let i=0;i<18;i++){const a=i*Math.PI*2/18,r=range(4.5,8.2);const rock=add(new THREE.ConeGeometry(range(.35,.7),range(1.2,3),5),i%3===0?purple:darkStone);rock.rotation.z=Math.PI;rock.position.set(Math.cos(a)*r,-1.9-range(0,1),Math.sin(a)*r*.8);}
+for(let i=0;i<3;i++){const ring=add(new THREE.TorusGeometry(2.8+i*1.75,.035,6,100),gold);ring.rotation.x=Math.PI/2;ring.position.y=.76;ring.scale.y=.8;}
+const wallGroup=new THREE.Group();world.add(wallGroup);for(let i=0;i<15;i++){const a=Math.PI*.12+i*Math.PI*.76/14,x=Math.cos(a)*7.3,z=-Math.sin(a)*5.4;const panel=box(1.18,9.2,.5,x,5.3,z,darkWood,wallGroup);panel.rotation.y=Math.atan2(x,-z)*.28;cylinder(.28,.35,9.6,x,5.2,z+.35,stone,wallGroup);sphere(.37,x,10,z+.35,gold,wallGroup);}
+function gothicWindow(x,y,z,width=1.45,height=3.6){const g=new THREE.Group();g.position.set(x,y,z);world.add(g);box(width,height*.7,.13,0,0,0,darkStone,g);box(width*.72,height*.58,.15,0,-.04,.12,mat('#6b58b4',{emissive:'#462ba0',emissiveIntensity:1.3,transparent:true,opacity:.83}),g);for(const s of [-1,1]){connect([s*width*.48,-height*.4,.22],[s*width*.48,height*.27,.22],.065,gold,g);connect([s*width*.48,height*.27,.22],[0,height*.65,.22],.065,gold,g);}connect([0,-height*.4,.24],[0,height*.55,.24],.045,gold,g);}
+for(const x of [-5.2,-2.6,0,2.6,5.2])gothicWindow(x,6.8,-5.3,1.5,3.4);
+function bookshelf(x,z,rotation=0,scale=1){const g=new THREE.Group();g.position.set(x,.8,z);g.rotation.y=rotation;g.scale.setScalar(scale);world.add(g);box(2.55,6.6,.35,0,3.3,-.23,darkWood,g);for(const s of [-1.24,1.24])box(.16,6.8,.7,s,3.35,0,gold,g);for(let row=0;row<5;row++){const y=.35+row*1.25;box(2.65,.13,.78,0,y,0,wood,g);let px=-1.12;while(px<1.06){const w=range(.12,.24),h=range(.67,1.05),m=bookColors[Math.floor(random()*bookColors.length)];const b=box(w,h,.45,px+w/2,y+h/2+.05,.06,m,g);b.rotation.z=range(-.06,.06);px+=w+.025;}}box(2.9,.24,.9,0,6.8,0,gold,g);}
+for(const x of [-5.3,-2.65,0,2.65,5.3])bookshelf(x,-4.6,0,.92);for(const z of [-3.2,-.6,2.1])bookshelf(-6.45,z,Math.PI/2,.84);
+box(13.7,.4,2.15,0,6.2,-4,stone);box(13.9,.13,2.3,0,6.45,-4,gold);for(let x=-6.3;x<=6.3;x+=.9){connect([x,6.5,-2.87],[x,7.65,-2.87],.055,gold);sphere(.11,x,7.7,-2.87,gold);}connect([-6.5,7.6,-2.87],[6.5,7.6,-2.87],.065,gold);for(const x of [-4.7,-1.6,1.6,4.7]){connect([x-1.25,8,-4.7],[x,9.6,-4.7],.12,gold);connect([x,9.6,-4.7],[x+1.25,8,-4.7],.12,gold);}
+for(let i=0;i<15;i++){const t=i/14,angle=-.7+t*1.4,x=5+Math.sin(angle)*2,z=3.6-t*5.2,y=.9+t*5.4;const step=box(2.2,.23,.58,x,y,z,stone);step.rotation.y=angle*.5;const trim=box(2.24,.055,.61,x,y+.14,z,gold);trim.rotation.y=angle*.5;if(i%2===0){connect([x+1.18,y,z],[x+1.18,y+1.1,z],.055,gold);sphere(.12,x+1.18,y+1.1,z,gold);}}
+cylinder(3.25,3.55,.6,.4,1.05,.2,stone,world,48).scale.z=.85;
+const portal=new THREE.Group();portal.position.set(.4,4.25,.1);world.add(portal);function portalRing(radius,tube,material){return add(new THREE.TorusGeometry(radius,tube,14,128),material,portal);}portalRing(2.58,.23,gold);portalRing(2.3,.08,glowGold);const outerRing=portalRing(2.95,.045,gold),innerRing=portalRing(1.9,.06,cyan);
+const portalShader=new THREE.ShaderMaterial({uniforms:{uTime:{value:0},uBoost:{value:0}},vertexShader:`varying vec2 vUv;void main(){vUv=uv;gl_Position=projectionMatrix*modelViewMatrix*vec4(position,1.0);}`,fragmentShader:`uniform float uTime;uniform float uBoost;varying vec2 vUv;void main(){vec2 p=vUv-.5;float r=length(p);float a=atan(p.y,p.x);float spiral=sin(a*5.-r*32.+uTime*1.7);float wave=sin(r*45.-uTime*3.5);float energy=.5+.5*spiral+wave*.12;vec3 purple=vec3(.19,.05,.48);vec3 blue=vec3(.10,.66,.96);vec3 pink=vec3(.91,.43,.95);vec3 color=mix(purple,blue,energy);color=mix(color,pink,pow(max(spiral,0.),7.)*.6);float center=1.-smoothstep(.02,.5,r);color+=center*vec3(.4,.24,.65);color*=1.15+uBoost*.8;float edge=1.-smoothstep(.43,.5,r);gl_FragColor=vec4(color,edge*.96);}`,transparent:true,side:THREE.DoubleSide,depthWrite:false});
+const portalSurface=add(new THREE.PlaneGeometry(4.35,4.35),portalShader,portal);portalSurface.position.z=-.12;const portalLight=pointLight('#8751ff',85,17,.4,4.3,1);const runes=new THREE.Group();portal.add(runes);for(let i=0;i<16;i++){const a=i*Math.PI*2/16;const rune=box(.13,.34,.08,Math.cos(a)*2.82,Math.sin(a)*2.82,.08,gold,runes);rune.rotation.z=a-Math.PI/2;}
+box(2.9,.22,1.65,-4.1,1.8,3.4,wood);for(const x of [-5.2,-3])for(const z of [2.75,4.05])box(.15,1,.15,x,1.25,z,gold);
+const magicBook=new THREE.Group();magicBook.position.set(-4.1,2.08,3.4);world.add(magicBook);const leftCover=box(.78,.07,1.05,-.39,0,0,bookColors[2],magicBook),rightCover=box(.78,.07,1.05,.39,0,0,bookColors[2],magicBook);box(.09,.14,1.07,0,-.04,0,gold,magicBook);const leftPage=box(.71,.035,.96,-.39,.06,0,parchment,magicBook),rightPage=box(.71,.035,.96,.39,.06,0,parchment,magicBook);let bookOpen=false;const bookTargets=[leftCover,rightCover,leftPage,rightPage];
+const flying=[];function floatingBook(x,y,z,scale){const g=new THREE.Group();g.position.set(x,y,z);g.scale.setScalar(scale);world.add(g);for(const side of [-1,1]){const cover=box(.7,.07,.95,side*.36,0,0,bookColors[Math.floor(random()*bookColors.length)],g);cover.rotation.z=side*.18;box(.65,.035,.88,side*.36,.06,0,parchment,g);}flying.push({group:g,y,phase:range(0,Math.PI*2)});}for(const p of [[-3.5,6.2,1.4,.9],[3.4,7.4,.6,1],[-1.6,8.4,-1.1,.7],[2.7,3.9,3.4,.8],[-5.3,5.1,4,.65],[4.5,8.5,-2.1,.7]])floatingBook(...p);
+const flames=[];function candle(x,y,z){cylinder(.12,.13,.45,x,y,z,parchment);const f=sphere(.13,x,y+.33,z,glowGold);f.scale.y=1.5;flames.push(f);pointLight('#ffae61',5,4,x,y+.35,z);}for(const p of [[-5,2,3],[-3.2,2,3.8],[3.5,1.4,4.4],[-5.7,7.1,-2.7]])candle(...p);
+function lantern(x,y,z){box(.65,.95,.65,x,y,z,gold);box(.48,.7,.48,x,y,z,glowGold);pointLight('#ffbc73',12,7,x,y,z);}for(const p of [[-5.5,8,2],[3.8,8.3,2.7],[0,10.1,-2.3]]){connect([p[0],p[1]+1.5,p[2]],[p[0],p[1]+.5,p[2]],.04,gold);lantern(...p);}
+for(const p of [[-6,1.1,4.9],[6.2,1.1,4.8],[-5.4,6.8,-2.5],[4.5,1.4,-1.7]]){const c=add(new THREE.OctahedronGeometry(.4),cyan);c.position.set(...p);c.scale.y=1.8;pointLight('#54caff',4,4,...p);}
+const particleCount=550,particlePositions=new Float32Array(particleCount*3),particleSpeeds=[];for(let i=0;i<particleCount;i++){particlePositions[i*3]=range(-11,11);particlePositions[i*3+1]=range(.5,13);particlePositions[i*3+2]=range(-9,9);particleSpeeds.push(range(.25,.8));}const particleGeometry=new THREE.BufferGeometry();particleGeometry.setAttribute('position',new THREE.BufferAttribute(particlePositions,3));const particles=new THREE.Points(particleGeometry,new THREE.PointsMaterial({color:'#c4ddff',size:.085,transparent:true,opacity:.85,depthWrite:false}));scene.add(particles);
+let night=false,boost=false,autoTour=false,burstTime=-100;const toast=document.querySelector('#toast');let toastUntil=0;function notify(message){toast.textContent=message;toast.style.opacity='1';toastUntil=performance.now()+2500;}
+document.querySelector('#night').onclick=()=>{night=!night;scene.background=mistBackground;scene.fog.color.set(night?'#090a19':'#171126');sun.intensity=night?.8:3.1;renderer.toneMappingExposure=night?1.3:1.65;document.querySelector('#night').textContent=night?'☀️ 낮 모드':'🌙 야간 모드';};
+document.querySelector('#power').onclick=()=>{boost=!boost;portalShader.uniforms.uBoost.value=boost?1:0;document.querySelector('#power').classList.toggle('active',boost);notify(boost?'차원문의 마력이 증폭되었습니다!':'마력이 안정되었습니다.');};
+document.querySelector('#tour').onclick=()=>{autoTour=!autoTour;document.querySelector('#tour').textContent=autoTour?'⏸ 투어 중지':'🎥 자동 투어';};
+document.querySelector('#reset').onclick=()=>{autoTour=false;document.querySelector('#tour').textContent='🎥 자동 투어';camera.position.set(13.5,11.8,16.5);controls.target.set(0,4.2,0);controls.update();};
+const clock=new THREE.Clock(),raycaster=new THREE.Raycaster(),pointer=new THREE.Vector2();let pointerDown=null;
+renderer.domElement.addEventListener('pointerdown',e=>{pointerDown={x:e.clientX,y:e.clientY};});
+renderer.domElement.addEventListener('pointerup',e=>{if(!pointerDown)return;const moved=Math.hypot(e.clientX-pointerDown.x,e.clientY-pointerDown.y);pointerDown=null;if(moved>6)return;const rect=renderer.domElement.getBoundingClientRect();pointer.x=((e.clientX-rect.left)/rect.width)*2-1;pointer.y=-((e.clientY-rect.top)/rect.height)*2+1;raycaster.setFromCamera(pointer,camera);const portalHits=raycaster.intersectObject(portalSurface,false),bookHits=raycaster.intersectObjects(bookTargets,false);if(portalHits.length&&(!bookHits.length||portalHits[0].distance<bookHits[0].distance)){burstTime=clock.getElapsedTime();notify('차원문이 반응합니다!');}else if(bookHits.length){bookOpen=!bookOpen;notify(bookOpen?'마법책이 펼쳐졌습니다.':'마법책을 닫았습니다.');}});
+const tourTarget=new THREE.Vector3(0,4.2,0);
+function animate(){requestAnimationFrame(animate);const dt=Math.min(clock.getDelta(),.05),t=clock.getElapsedTime();for(const m of mistWisps){m.sprite.position.x=m.baseX+Math.sin(t*.13+m.phase)*.85;m.sprite.position.y=m.baseY+Math.sin(t*.28+m.phase)*.12;}portalShader.uniforms.uTime.value=t;outerRing.rotation.z=t*.09;innerRing.rotation.z=-t*.28;runes.rotation.z=-t*.12;const burst=Math.max(0,1-(t-burstTime)/1.3);portalLight.intensity=(boost?140:85)*(1+.1*Math.sin(t*2.5))+burst*100;portal.scale.setScalar(1+burst*.045);for(const b of flying){b.group.position.y=b.y+Math.sin(t*1.15+b.phase)*.3;b.group.rotation.y=t*.16+b.phase;b.group.rotation.z=Math.sin(t*.8+b.phase)*.12;}const angle=bookOpen?.5:.12;leftCover.rotation.z+=(-angle-leftCover.rotation.z)*.06;rightCover.rotation.z+=(angle-rightCover.rotation.z)*.06;leftPage.rotation.z=leftCover.rotation.z;rightPage.rotation.z=rightCover.rotation.z;magicBook.position.y=2.08+Math.sin(t*1.3)*.08;flames.forEach((f,i)=>{f.scale.y=1.4+Math.sin(t*8+i)*.23;});for(let i=0;i<particleCount;i++){particlePositions[i*3+1]+=particleSpeeds[i]*dt*.7;if(particlePositions[i*3+1]>13)particlePositions[i*3+1]=.5;}particleGeometry.attributes.position.needsUpdate=true;if(autoTour){const a=t*.13;camera.position.lerp(new THREE.Vector3(Math.cos(a)*26,13+Math.sin(t*.22)*3,Math.sin(a)*26),.018);controls.target.lerp(tourTarget,.035);}if(performance.now()>toastUntil)toast.style.opacity='0';controls.update();renderer.render(scene,camera);}
+animate();window.addEventListener('resize',()=>{camera.aspect=innerWidth/innerHeight;camera.updateProjectionMatrix();renderer.setSize(innerWidth,innerHeight);});
+console.log('Between Pages 4.0 — Dimensional Mist loaded');
+</script>
+</body>
+</html>
